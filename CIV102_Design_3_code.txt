@@ -1,0 +1,249 @@
+clear; close all;
+%% 0. Initialize Parameters
+L = 1270; % Length of bridge
+n = 1270; % Discretize into 1 mm seg.
+
+x = linspace(0, L, n+1); % x-axis
+
+%% 1. SFD, BMD under train loading
+x_train = [52 228 392 568 732 908]; % Train Load Locations
+W = 135
+P_train = [W*1.1/2 W*1.1/2 W/2 W/2 W*1.1*1.35/2 W*1.1*1.35/2];
+
+P = sum(P_train); % Total weight of train [N]
+
+n_train = 856 + L + 1; % num of train locations
+SFDi = zeros(n_train, n+1); % 1 SFD for each train loc.
+BMDi = zeros(n_train, n+1); % 1 BMD for each train loc.
+
+% Solve for SFD and BMD with the train at different locations
+function [A, B] = rxn_forces(Ps, xs, pos, start, stop, length)
+    B = dot(Ps(start: stop), xs(start:stop) - 53 + pos - 856 - (length-1200)/2)/1200;
+    A = sum(Ps(start:stop)) - B;
+end
+
+function weights = w_dist(ws, Ps, xs, pos, start, stop)
+    weights = ws;
+    for j = start:stop
+        weights(xs(j) - 52 + pos - 856) = weights(xs(j) - 52 + pos - 856) - Ps(j);
+    end
+end
+for i = 1:n_train
+% start location of train
+% sum of moments at A eqn
+    F_B = 0;
+    F_A = 0;
+    if i <= 176
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 6, 6, L);
+    elseif i <= 340
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 5, 6, L);
+    elseif i <= 516
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 4, 6, L);
+    elseif i <= 680
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 3, 6, L);
+    elseif i <= 856
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 2, 6, L);
+    elseif i > n_train - 176
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 1, 1, L);
+    elseif i > n_train - 340
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 1, 2, L);
+    elseif i > n_train - 516
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 1, 3, L);
+    elseif i > n_train - 680
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 1, 4, L);
+    elseif i > n_train - 856
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 1, 5, L);
+    else
+        [F_A, F_B] = rxn_forces(P_train, x_train, i, 1, 6, L);
+    end
+% sum of Fy eqn
+% construct applied loads
+% w(x)
+    w = zeros(1, n+1);
+    w((L-1200)/2 + 1) = F_A;
+    w((L+1200)/2 + 1) = F_B;
+    if i <= 176
+        w = w_dist(w, P_train, x_train, i, 6, 6);
+    elseif i <= 340
+        w = w_dist(w, P_train, x_train, i, 5, 6);
+    elseif i <= 516
+        w = w_dist(w, P_train, x_train, i, 4, 6);
+    elseif i <= 680
+        w = w_dist(w, P_train, x_train, i, 3, 6);
+    elseif i <= 856
+        w = w_dist(w, P_train, x_train, i, 2, 6);
+    elseif i > n_train - 176
+        w = w_dist(w, P_train, x_train, i, 1, 1);
+    elseif i > n_train - 340
+        w = w_dist(w, P_train, x_train, i, 1, 2);
+    elseif i > n_train - 516
+        w = w_dist(w, P_train, x_train, i, 1, 3);
+    elseif i > n_train - 680
+        w = w_dist(w, P_train, x_train, i, 1, 4);
+    elseif i > n_train - 856
+        w = w_dist(w, P_train, x_train, i, 1, 5);
+    else
+        w = w_dist(w, P_train, x_train, i, 1, 6);
+    end
+% SFD = num. integral(w)
+    SFDi(i, 1) = w(1);
+    for j = 2: n+1
+        SFDi(i, j) = SFDi(i, j-1) + w(j);
+    end
+% BMD = num. integral(SFD)
+    BMDi(i, 1) = 0;
+    for j = 2: n+1
+        BMDi(i, j) = BMDi(i, j-1) + SFDi(i, j-1);
+    end
+end
+SFD = max(abs(SFDi)) %SFD envelope
+BMD = max(abs(BMDi)) %BMD envelope
+plot(x, SFD)
+plot(x, BMD)
+set(gca, 'YDir','reverse')
+
+
+%% 2. Define Bridge Parameters 
+d = 100     % deck width
+t = 1.27    % thickness of the board
+b_h = 120    % total bridge height
+bot = 90    % width of the bottom of the bridge
+gt = (bot-2*t)/2      % glue tab width
+l = 1       % number of top layers
+a = 200     % diaphragm spacing
+
+%    top            Web 1       Web 2       Glue tab        Glue tab        bottom
+b = [d              t           t           gt              gt              bot-2*t]
+h = [l*t            b_h-l*t     b_h-l*t     t               t               t]
+y = [b_h - l*t/2    (b_h-l*t)/2 (b_h-l*t)/2 b_h-l*t-t/2     b_h-l*t-t/2     t/2]
+
+area_used = L*(d*l + 2*(h(2)+b(4)) + bot) + 6*(100-(l+1)*t)*(bot - 2*t)
+total_area = 813*1016
+
+%% 3. Calculate Sectional Properties 
+
+ybar = (sum(b.*h.*y))/(dot(b, h))
+ybot = 0
+ytop = b_h
+
+I = sum(b.*h.^3/12) + sum(b.*h.*((y - ybar).^2))
+
+Qcent = ybar*b(2)*ybar/2 + ybar*b(3)*ybar/2 + h(6)*b(6)*(ybar - y(6))
+
+Qglue = b(1)*h(1)*(y(1) - ybar)
+Q_glue_new = bot*t*(ybar - t/2)
+
+%% 4. Calculate Applied Stress 
+S_top = BMD(2:n)*(ytop-ybar)/I
+S_bot = BMD(2:n)*(ybar-ybot)/I
+T_cent = SFD(1:n)*Qcent/(I*(b(2)+b(3)))
+T_glue = SFD(1:n)*Qglue/(I*(b(2)+b(3)+b(4)+b(5)))
+T_glue_new = SFD(1:n)*Q_glue_new/(I*(b(2)+b(3)))
+
+%% 5. Material and Thin Plate Buckling Capacities 
+E  = 4000; 
+mu = 0.2; 
+S_tens  =  30*ones(1, n-1)
+S_comp  =  6*ones(1, n-1)
+T_max   =  4*ones(1, n)
+T_gmax  =  2*ones(1, n)
+S_buck1 =  4*pi^2*E/(12*(1-mu^2))*((h(1)+h(4))/(bot - 2*t))^2*ones(1, n-1)
+S_buck2 =  0.425*pi^2*E/(12*(1-mu^2))*(2*h(1)/(b(1)-bot))^2*ones(1, n-1)
+S_buck3 =  6*pi^2*E/(12*(1-mu^2))*(b(2)/(h(2)-ybar))^2*ones(1, n-1)
+T_buck  =  (5*pi^2*E/(12*(1-mu^2)))*((b(2)/h(2))^2+(b(2)/a)^2)*ones(1, n)
+
+%% 6. FOS 
+FOS_tens    =  S_tens./S_bot
+FOS_comp    =  S_comp./S_top
+FOS_shear   =  T_max./T_cent
+FOS_glue    =  T_gmax./T_glue
+FOS_glue_new = T_gmax./T_glue_new
+FOS_buck1   =  S_buck1./S_top
+FOS_buck2   =  S_buck2./S_top
+FOS_buck3   =  S_buck3./S_top
+FOS_buckV   =  T_buck./T_cent
+
+%% 7. Min FOS and the failure load Pfail 
+minFOS =  min([FOS_tens FOS_comp FOS_shear FOS_glue FOS_buck1 FOS_buck2 FOS_buck3 FOS_buckV])
+Pf = P*minFOS
+
+%% 8. Vfail and Mfail
+Mf_tens  =  BMD(2:n).*FOS_tens
+Mf_comp  =  BMD(2:n).*FOS_comp
+Vf_shear =  SFD(1:n).*FOS_shear
+Vf_glue  =  min(SFD(1:n).*FOS_glue, SFD(1:n).*FOS_glue_new)
+Mf_buck1 =  BMD(2:n).*FOS_buck1
+Mf_buck2 =  BMD(2:n).*FOS_buck2
+Mf_buck3 =  BMD(2:n).*FOS_buck3
+Vf_buckV =  SFD(1:n).*FOS_buckV
+
+%% 9. Output plots of Vfail and Mfail 
+SFDpos = max(SFDi);
+SFDneg = min(SFDi);
+
+subplot(2,3,1) 
+hold on; grid on; grid minor; 
+plot(x(1:n), Vf_shear, 'r') 
+plot(x(1:n), -Vf_shear, 'r') 
+plot(x, SFDpos, 'k')
+plot(x, SFDneg, 'k')
+plot([0, L], [0, 0], 'k', 'LineWidth', 2) 
+legend('Matboard Shear Failure') 
+xlabel('Distance along bridge (mm)') 
+ylabel('Shear Force (N)') 
+
+subplot(2,3,2) 
+hold on; grid on; grid minor; 
+plot(x(1:n), Vf_glue, 'b')
+plot(x(1:n), -Vf_glue, 'b')
+plot(x, SFDpos, 'k')
+plot(x, SFDneg, 'k')
+plot([0, L], [0, 0], 'k', 'LineWidth', 2) 
+legend('Glue Shear Failure')
+xlabel('Distance along bridge (mm)') 
+ylabel('Shear Force (N)') 
+
+subplot(2,3,3) 
+hold on; grid on; grid minor; 
+plot(x(1:n), Vf_buckV, 'r') 
+plot(x(1:n), -Vf_buckV, 'r') 
+plot(x, SFDpos, 'k')
+plot(x, SFDneg, 'k')
+plot([0, L], [0, 0], 'k', 'LineWidth', 2) 
+legend('Matboard Shear Buckling Failure') 
+xlabel('Distance along bridge (mm)') 
+ylabel('Shear Force (N)') 
+
+subplot(2,3,4) 
+hold on; grid on; grid minor; 
+plot(x(2:n), Mf_tens, 'r') 
+plot(x(2:n), Mf_comp, 'b') 
+plot(x, BMD, 'k')
+plot([0, L], [0, 0], 'k', 'LineWidth', 2) 
+set(gca, 'YDir','reverse')
+legend('Matboard Tension Failure', 'Matboard Compression Failure', 'Location', 'west') 
+xlabel('Distance along bridge (mm)') 
+ylabel('Bending Moment (Nmm)') 
+
+subplot(2,3,5) 
+hold on; grid on; grid minor; 
+plot(x(2:n), Mf_buck1, 'r') 
+plot(x(2:n), Mf_buck2, 'b') 
+plot(x, BMD, 'k')
+plot([0, L], [0, 0], 'k', 'LineWidth', 2) 
+set(gca, 'YDir','reverse')
+legend('Matboard Buckling Failure, Top Flange - Mid', 'Matboard Buckling Failure, Top Flange - Sides', 'Location', 'west') 
+xlabel('Distance along bridge (mm)') 
+ylabel('Bending Moment (Nmm)') 
+
+subplot(2,3,6) 
+hold on; grid on; grid minor; 
+plot(x(2:n), Mf_buck3, 'r') 
+plot(x, BMD, 'k')
+plot([0, L], [0, 0], 'k', 'LineWidth', 2) 
+set(gca, 'YDir','reverse')
+legend('Matboard Buckling Failure, Webs', 'Location', 'west') 
+xlabel('Distance along bridge (mm)') 
+ylabel('Bending Moment (Nmm)') 
+
+
